@@ -114,7 +114,7 @@ impl<'a> Reader<'a> {
             .into_iter()
             .map(std::string::ToString::to_string)
             .collect::<Vec<String>>();
-        /// We can already guess its capacity
+        // We can already guess its capacity
         self.data = Vec::with_capacity(lines.len());
         if self.settings.contains_key("headers") && !self.has_headers {
             let headers = self.settings.get("headers").unwrap();
