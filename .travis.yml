@@ -1,0 +1,19 @@
+language: rust
+rust:
+  - nightly
+  - beta
+  - stable
+jobs:
+  fast_finish: true
+
+os:
+  - linux
+  - osx
+  - windows
+addons:
+  apt:
+    packages:
+      - xorg-dev
+      - libxcb-shape0-dev
+      - libxcb-xfixes0-dev
+      - libhdf5-dev
