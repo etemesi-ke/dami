@@ -1,0 +1,3 @@
+Add `regex` support in csv
+Make a better csv separator in csv(to handle commas in quotes)
+Check out baggie
