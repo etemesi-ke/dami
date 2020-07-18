@@ -7,8 +7,6 @@
 
 name: Labeler
 on: [pull_request]
-
-jobs:
   Series:
     -any : ["src/core/series","src/core/series.rs"]
   Input/Output:
@@ -16,7 +14,10 @@ jobs:
     
   DataFrames:
      -any: ["src/core/dataframes/*","src/core/block_managers/*"]
-    runs-on: ubuntu-latest
+    
+
+jobs:
+   runs-on: ubuntu-latest
 
     steps:
     - uses: actions/labeler@v2
