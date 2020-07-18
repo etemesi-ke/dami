@@ -10,7 +10,7 @@ on: [pull_request]
 
 jobs:
   Series:
-    -any:["src/core/series","src/core/series.rs"
+    -any:["src/core/series","src/core/series.rs"]
   Input/Output:
      -any: ["src/io/*","src/io.rs"]
     
