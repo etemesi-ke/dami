@@ -1,6 +1,8 @@
 //! Common miscellaneous functions for the crate
+#![allow(unused_imports)]
 use crate::core::index::date_time::DateTimeIndex;
 use chrono::NaiveDateTime;
+#[cfg(feature = "regex")]
 use regex::Regex;
 use std::collections::HashMap;
 use std::hash::Hash;
@@ -46,6 +48,7 @@ pub fn most_frequent<T: Default + Eq + Hash + Clone>(arr: &[T]) -> (i32, T) {
 ///
 /// [chrono]: https://docs.rs/chrono
 #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+#[cfg(feature = "regex")]
 pub fn date_range(start: &str, end: Option<&str>, periods: Option<i32>) -> DateTimeIndex {
     let start = start.replace(".", "/").replace("-", "/").trim().to_string();
     // See https://stackoverflow.com/questions/15491894/regex-to-validate-date-format-dd-mm-yyyy

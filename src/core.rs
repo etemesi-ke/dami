@@ -6,4 +6,6 @@ pub mod series;
 
 pub mod dataframe;
 
-pub mod index;
+mod block_manager;
+
+mod index;

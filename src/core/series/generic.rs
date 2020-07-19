@@ -1,23 +1,22 @@
 use crate::core::series::{get_type, Series};
 
 use crate::core::series::Error;
-use crate::io::csv::series_to_csv;
 
 use super::ndarray::arr1;
 use ndarray::Array1;
 
 use std::collections::HashSet;
-use std::fs::OpenOptions;
+
 use std::hash::Hash;
-use std::io::Write;
+
 use std::iter::FromIterator;
 use std::iter::Iterator;
 use std::ops::Index;
-use std::path::Path;
 
 use crate::enums::DataTypes;
 use prettytable::format::consts::FORMAT_CLEAN;
 use prettytable::{Cell, Row, Table};
+#[cfg(feature = "regex")]
 use regex::Regex;
 use std::fmt::Display;
 
@@ -151,8 +150,12 @@ impl<T: Clone + 'static + Default> Series<T> {
     ///     assert_eq!(series,Series::from([1.,4.,9.]));
     /// }
     /// ```
-    pub fn apply_inplace<F: Fn(T) -> T>(&mut self, func: F) {
-        self.array.mapv_inplace(|f| func(f))
+    pub fn apply_inplace<F: Fn(T) -> T>(&mut self, func: F)
+    where
+        T: Send + Sync,
+        F: Sync,
+    {
+        self.array.par_mapv_inplace(|f| func(f))
     }
     /// Convert a series to another Series type
     ///
@@ -412,6 +415,7 @@ impl<T: Clone + 'static + Default> Series<T> {
     ///     assert_eq!(new,proof);
     /// }
     /// ```
+    #[cfg(feature = "regex")]
     pub fn filter_by_regex(&self, regex: &str) -> Series<T> {
         let regex = Regex::new(regex).expect("Could not use regex filter");
         let mut items: Vec<T> = vec![];
@@ -485,6 +489,40 @@ impl<T: Clone + 'static + Default> Series<T> {
     pub fn len(&self) -> usize {
         self.array.len()
     }
+    /// Replace values where condition is true
+    /// # Arguments
+    /// * `value`: Value to replace when `cond` becomes true
+    /// * `cond` a function that takes a generic T and returns either true or false.
+    /// # Example
+    /// ```
+    /// use dami::prelude::*;
+    /// let series =  Series::from([1,-1,2,5,3]);
+    /// let s2=series.mask(5,|f| f> 20); //Change all to 5
+    /// assert_eq!(s2,Series::from([5,5,5,5,5]));
+    /// ```
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn mask<F>(&self, value: T, cond: F) -> Series<T>
+    where
+        F: Fn(T) -> bool,
+    {
+        let mut series =
+            Series::from(
+                self.array
+                    .mapv(|f| if cond(f.clone()) { value.clone() } else { f }),
+            );
+        series.set_name(&self.get_name());
+        series
+    }
+    /// Like [mask](#method.mask) but does the conversion in place
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn mask_inplace<F>(&mut self, value: T, cond: F)
+    where
+        F: Fn(T) -> bool,
+    {
+        self.array
+            .mapv_inplace(|f| if cond(f.clone()) { value.clone() } else { f })
+    }
+
     /// Set a global name for the series which is used as a row identifier in the DataFrame
     pub fn set_name(&mut self, name: &str) {
         self.name = name.to_string()
@@ -532,22 +570,6 @@ impl<T: Clone + 'static + Default> Series<T> {
         T: Hash + Eq,
     {
         HashSet::from_iter(self.to_vec().into_iter())
-    }
-}
-
-impl<T: Clone + std::fmt::Display + Default + 'static> Series<T> {
-    /// Convert a series to a csv file and write the output to the file at path
-    pub fn to_csv<P: AsRef<Path>>(&self, path: P) {
-        let mut fd = OpenOptions::new()
-            .create(true)
-            .write(true)
-            .open(path)
-            .unwrap();
-        series_to_csv(self, &mut fd);
-    }
-    /// Convert a series to a csv file and write the output to the file at path
-    pub fn to_csv_buff<B: Write>(&self, mut buffer: &mut B) {
-        series_to_csv(self, &mut buffer)
     }
 }
 

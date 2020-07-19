@@ -80,7 +80,7 @@ impl fmt::Debug for Error {
 ///
 /// [ndarray]: https://docs.rs/ndarray/
 #[derive(Clone, Eq, PartialEq)]
-pub struct Series<T: Default> {
+pub struct Series<T: Sized> {
     array: Array1<T>,
     name: String,
     index: Vec<String>,
@@ -299,7 +299,7 @@ impl<T: Default> IndexMut<&str> for Series<T> {
     }
 }
 impl<T: Clone + 'static + Default> IntoIterator for Series<T> {
-    type Item = (String, T);
+    type Item = T;
     type IntoIter = SeriesIter<T>;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -316,20 +316,16 @@ pub struct SeriesIter<T: Default> {
     index: usize,
 }
 impl<T: Clone + 'static + Default> Iterator for SeriesIter<T> {
-    type Item = (String, T);
+    type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let data = match self.series.to_vec().get(self.index) {
+        match self.series.array.get(self.index) {
             Some(arr) => {
-                Some((self.series.index.get(self.index)
-                .expect("This should not happen\nIf you see this(check if the universe exists), file a bug report").to_owned(),
-                      arr.to_owned()))
-            },
-
-            None => {return std::option::Option::None}
-        };
-        self.index += 1;
-        data
+                self.index += 1;
+                Some(arr.clone())
+            }
+            None => std::option::Option::None,
+        }
     }
 }
 #[doc(hidden)]
@@ -369,8 +365,6 @@ fn get_type<T: Any>(value: &T) -> DataTypes {
         DataTypes::F64
     } else if value_any.is::<f32>() {
         DataTypes::F32
-    } else if value_any.is::<i128>() {
-        DataTypes::I128
     } else if value_any.is::<i64>() {
         DataTypes::I64
     } else if value_any.is::<i32>() {

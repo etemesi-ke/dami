@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! The DateTimeIndex module
 use chrono::{DateTime, Datelike, NaiveDateTime};
 use ndarray::Array1;

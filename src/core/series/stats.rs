@@ -23,7 +23,7 @@ impl<T: Clone + Float + Default> Series<T> {
     /// # Requires Feature
     ///  > * `stats`
     /// # Implemented for
-    /// > * Floats => [`f32`],[`f64`]
+    /// > * Floats => [`f32`],[`f64`],[`i32`]
     ///
     ///Finds the element wise maximum of the array.
     /// Even if there are multiple (equal) elements that are maxima, only one is returned.

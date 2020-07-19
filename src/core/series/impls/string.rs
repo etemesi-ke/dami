@@ -115,7 +115,7 @@ impl Str<'static> for Series<&'static str> {
     }
 
     fn lower(&self) -> Series<String> {
-        let mut series = Series::from(self.array.mapv(|f| f.to_lowercase()));
+        let mut series = Series::from(self.array.mapv(str::to_lowercase));
         series.set_name(&self.get_name());
         series
     }

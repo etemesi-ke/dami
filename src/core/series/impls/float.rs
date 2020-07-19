@@ -243,9 +243,9 @@ macro_rules! float_impl (($type:ty,$ntype:ident) => (
         }
         fn first_valid_index(&self)->Option<String>{
             // TODO : Once I've implemented iter use here to prevent consuming the values
-            for i in self.clone().into_iter(){
+            for i in self.clone().into_iter().enumerate(){
                 if !i.1.is_nan(){
-                    return Some(i.0)
+                    return Some(self.index[i.0].clone())
                 }
             }
             None
