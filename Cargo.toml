@@ -39,7 +39,7 @@ lazy_static = "1.4.0"
 # Loading lz compressed files
 lzma-rs = "0.1.3"
 # Wrap text when printing to the terminal
-textwrap = "0.11"
+textwrap = "0.12"
 # Numerial traits for floating point numbers
 num-traits = "0.2"
 rayon = "1.3.1"
