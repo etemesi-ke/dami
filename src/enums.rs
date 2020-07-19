@@ -7,14 +7,12 @@ use std::fmt;
 /// This enum contains officially supported types in the series and DataFrames
 /// For unsupported types, they default to OBJECT variant here.
 /// Such types wont benefit from some type specific functions eg Series.describe()
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq, Hash)]
 pub enum DataTypes {
     ///[`i32`] type
     I32,
     ///[`i64`] type
     I64,
-    ///[`i128`] type
-    I128,
     ///[`f32`] type
     F32,
     ///[`f64`] type
@@ -36,7 +34,6 @@ impl fmt::Debug for DataTypes {
             Self::F64 => write!(f, "f64"),
             Self::I32 => write!(f, "i32"),
             Self::I64 => write!(f, "i64"),
-            Self::I128 => write!(f, "i128"),
             Self::STR => write!(f, "str"),
             Self::BOOL => write!(f, "bool"),
             Self::STRING => write!(f, "string"),
