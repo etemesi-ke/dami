@@ -186,9 +186,4 @@ impl<'a> FWFReader<'a> {
         }
         df
     }
-
-    /// Get data stored in the buffer
-    pub fn data(&self) -> Vec<Vec<String>> {
-        self.data.clone()
-    }
 }

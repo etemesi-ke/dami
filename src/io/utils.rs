@@ -98,7 +98,7 @@ pub fn read<P: AsRef<Path> + fmt::Debug + Clone>(path: P) -> String {
     // TODO: These functions are wrangled it would be nice if they were done better
     if is_url(path.as_ref().to_str().unwrap()) {
         #[cfg(feature = "remote")]
-        if is_compressed(path.as_ref().to_str().unwrap()) {
+        if url_is_compressed(path.as_ref().to_str().unwrap()) {
             let path = write_remote_to_file(path.as_ref().to_str().unwrap());
             if path.ends_with(".zip") {
                 return open_zip(path).unwrap();
@@ -214,9 +214,15 @@ fn write_remote_to_file(url: &str) -> String {
     temp_dir.to_str().unwrap().to_string()
 }
 
+pub fn is_compressed(filename: &str) -> bool {
+    if filename.ends_with(".csv") || filename.ends_with(".json") || filename.ends_with(".txt") {
+        return false;
+    }
+    true
+}
 /// Check if the file is compressed
 #[cfg(feature = "remote")]
-fn is_compressed(file_name: &str) -> bool {
+fn url_is_compressed(file_name: &str) -> bool {
     let x = Url::from_str(file_name).unwrap();
     let path = x.path();
     if path.ends_with(".csv") || path.ends_with(".json") || path.ends_with(".html") {
@@ -225,7 +231,7 @@ fn is_compressed(file_name: &str) -> bool {
     true
 }
 /// Check if the string is a url
-fn is_url(path: &str) -> bool {
+pub fn is_url(path: &str) -> bool {
     if path.starts_with("http://")
         || path.starts_with("https://")
         || path.starts_with("file://")
