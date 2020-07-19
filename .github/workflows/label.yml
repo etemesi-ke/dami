@@ -6,21 +6,17 @@
 # https://github.com/actions/labeler
 
 name: Labeler
-on: [pull_request]
-  
-Series:
-    -any : ["src/core/series","src/core/series.rs"]
-Input/Output:
-     -any: ["src/io/*","src/io.rs"]
-    
-DataFrames:
-     -any: ["src/core/dataframes/*","src/core/block_managers/*"]
-    
+on: 
+  pull_request:
+    branches:
+      - master // destination branch where this workflow will trigger
 
 jobs:
-   runs-on: ubuntu-latest
+  label:
+    runs-on: ubuntu-latest
 
     steps:
     - uses: actions/labeler@v2
       with:
         repo-token: "${{ secrets.GITHUB_TOKEN }}"
+        configuration-path: .github/repo-labels.yml 
