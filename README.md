@@ -9,8 +9,12 @@ like `kurtosis()` and `skewness()`
 * Plotting for `i32`, `i64`, `i128`,`f32` and `f64` Series types and DataFrames
 * Support for `evcxr rust jupyter` runtimes with methods that contain `_excvr` 
 * Well documented code.
+* Speed and memory efficiency.
+* Parrallel iterators on DataFrame methods.
 
  # Pluggable features
+* `feature="stats"`: **Enabled by default** higher order statistical methods like kurtosis, central moments
+And the ability to plot both Numerical type series and DataFrames.
 * `feature="remote"`: Allows for reading remote (compressed and non-compressed) files 
 * `feature="excel"`: Read excel/odf spreadsheet files
 * `feature="hdf5"` : Read hdf files 
