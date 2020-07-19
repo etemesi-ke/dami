@@ -497,7 +497,7 @@ impl<T: Clone + 'static + Default> Series<T> {
     /// ```
     /// use dami::prelude::*;
     /// let series =  Series::from([1,-1,2,5,3]);
-    /// let s2=series.mask(5,|f| f> 20); //Change all to 5
+    /// let s2=series.mask(5,|f| f< 20); //Change all to 5
     /// assert_eq!(s2,Series::from([5,5,5,5,5]));
     /// ```
     #[allow(clippy::needless_pass_by_value)]
