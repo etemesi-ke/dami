@@ -1,0 +1,5 @@
+core
+  - any :["/src/core/*"] 
+
+io
+  - any: ["/src/io/*"]
