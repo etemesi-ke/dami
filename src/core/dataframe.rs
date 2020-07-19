@@ -1,345 +1,341 @@
-//! This module contains the DataFrame Struct and its associated capabilities
-use crate::enums::{DataFrameErrors, DataTypes};
-use crate::prelude::*;
-use baggie::Baggie;
+use crate::core::block_manager::BlockManager;
+use crate::core::series::Series;
+use crate::enums::DataFrameErrors;
 use ndarray::{Array1, Array2};
-use prettytable::format::consts::FORMAT_CLEAN;
-use prettytable::{Cell, Row, Table};
 use std::collections::hash_map::RandomState;
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::fmt;
-use textwrap::fill;
 
-mod generics;
-mod ints;
-mod ops;
 mod stats;
-/// A container for heterogeneous data
-///
-/// A DataFrame is a special structure that can hold heterogeneous series types and
-/// supporting higher level functions for series
-///
-/// Data is stored in a row-column format.
-/// ```text
-/// | index| col1| col2|....|coln|
-/// |------|-----|-----|    |----|
-/// |0     |val1 |val1 |    |val1|
-/// |1     |val2 |val2 |    |val2|
-/// |------|-----|-----|    |----|
-/// |n     |valn |valn |    |valn|
-/// ```
-/// A column represents a series while the first column contains the index which *currently has no use*
-///
-///  # Limitations
-/// * ## Some Functions require explicit types to be specified
-/// > Since the DataFrame can hold heterogeneous data **AND** the Rust compiler needs to know
-/// the type of Data is contained in the Series a lot of pattern matching goes on under the hood.
-/// (Sometimes that's the only thing that goes on).
-/// The DataFrame will hold any type of Series<T> but operations on `f64`,`f32` and `i32` are the ones fully supported
-/// with partial support for `i64`, `i128`, `str` and `String` types.
-/// > To apply certain functions in the DataFrame eg square all floats using apply the turbofish syntax is needed
-/// ```ignore
-/// df.apply::<f64,_>(|f| f.powi(2)) //Square all floats in the dataframe
-/// ```
-///
-/// * ## Implicit conversion of Data may occur at times for certain operations
-/// > On computational functions like `covariance` or `kurtosis()`, `f32` and `i32` Series types are converted to `f64`
-/// and then the corresponding computation function is invoked, the rest types are ignored
-///
-/// * ## DataFrames cannot be indexed
-/// ```python
-/// df["new_col"]=df["col1"]+df["col2"]
-/// ```
-///> might be something that is possible in Python.
-///
-///> But not in Rust as Rust cannot determine during compilation
-/// the type `new_col` or what `col1` or `col2` is, so here to implement such an operation you might do something like this
-/// ```ignore
-/// let added_col = df.get_series::<i32>("col1").unwrap()+df.get_series::<i32>("col2").unwrap();
-/// df.add_col("new_col",added_col);
-/// ```
+#[derive(Default, Clone)]
 pub struct DataFrame {
-    container: Baggie<String>,
-    index: Vec<String>,
-    // Keep a track on orders. As HashMaps do not maintain insertion order so sometimes names may be
-    // printed wrongly.
-    order: Vec<String>,
-    len: usize,
-    dtypes: HashMap<String, DataTypes>,
+    block: BlockManager,
 }
-
 impl fmt::Debug for DataFrame {
-    #[allow(clippy::match_on_vec_items, clippy::too_many_lines)]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // Defaults to 80 if not determined
-        let mut table = Table::new();
-        // Use clean format
-        table.set_format(*FORMAT_CLEAN);
-        let mut title = vec![Cell::new("  ")];
-        for i in &self.order {
-            title.push(Cell::new(i))
-        }
-        let fields = self.order.len();
-        table.set_titles(Row::new(title));
-        // Thanks marcos
-        macro_rules! print_frame {
-            ($length:ident) => {
-                let mut new_row = vec![];
-                for item in self.order.iter() {
-                    match self.dtypes.get(item).unwrap() {
-                        DataTypes::STRING => {
-                            let val = fill(
-                                &format!(
-                                    "{:?}",
-                                    self.container
-                                        .get::<Series<String>, _>(item.as_str())
-                                        .unwrap()[$length]
-                                ),
-                                200 / fields,
-                            );
-                            new_row.push(Cell::new(&val))
-                        }
-                        DataTypes::I32 => {
-                            let val = format!(
-                                "{:?}",
-                                self.container.get::<Series<i32>, _>(item.as_str()).unwrap()
-                                    [$length]
-                            );
-                            new_row.push(Cell::new(&val))
-                        }
-                        DataTypes::I64 => {
-                            let val = format!(
-                                "{:?}",
-                                self.container.get::<Series<i64>, _>(item.as_str()).unwrap()
-                                    [$length]
-                            );
-                            new_row.push(Cell::new(&val))
-                        }
-                        DataTypes::I128 => {
-                            let val = format!(
-                                "{:?}",
-                                self.container
-                                    .get::<Series<i128>, _>(item.as_str())
-                                    .unwrap()[$length]
-                            );
-                            new_row.push(Cell::new(&val))
-                        }
-                        DataTypes::F32 => {
-                            let val = format!(
-                                "{:0<3.3}",
-                                self.container.get::<Series<f32>, _>(item.as_str()).unwrap()
-                                    [$length]
-                            );
-                            new_row.push(Cell::new(&val))
-                        }
-                        DataTypes::F64 => {
-                            let val = format!(
-                                "{:0<3.3}",
-                                self.container.get::<Series<f64>, _>(item.as_str()).unwrap()
-                                    [$length]
-                            );
-                            new_row.push(Cell::new(&val))
-                        }
-                        DataTypes::BOOL => {
-                            let val = format!(
-                                "{:0<3.3}",
-                                self.container
-                                    .get::<Series<bool>, _>(item.as_str())
-                                    .unwrap()[$length]
-                            );
-                            new_row.push(Cell::new(&val))
-                        }
-                        DataTypes::STR => {
-                            let val = format!(
-                                "{:?}",
-                                self.container
-                                    .get::<Series<&'static str>, _>(item.as_str())
-                                    .unwrap()[$length]
-                            );
-                            new_row.push(Cell::new(&val))
-                        }
-                        // We don't know you ..
-                        DataTypes::OBJECT => continue,
-                    }
-                }
-                new_row.insert(0, Cell::new(&self.index[$length]));
-                table.add_row(Row::new(new_row));
-            };
-        }
-        if self.len <= 10 {
-            for i in 0..self.len {
-                print_frame!(i);
-            }
-        } else {
-            for i in 0..5 {
-                print_frame!(i);
-            }
-            let length = self.len - 5;
-            // Add empty row to separate the first n and the last N items
-            table.add_empty_row();
-            for i in 0..5 {
-                let ln = i + length;
-                print_frame!(ln);
-            }
-        }
-        write!(f, "{}", table.to_string())
+        write!(f, "{:?}", self.block)
     }
 }
 
-impl Default for DataFrame {
-    fn default() -> Self {
-        Self::new()
+impl fmt::Display for DataFrame {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.block)
     }
 }
 impl DataFrame {
-    /// Create a new DataFrame
+    /// Create a new `DataFrame`
     pub fn new() -> DataFrame {
-        DataFrame {
-            container: Baggie::default(),
-            index: Vec::new(),
-            order: Vec::new(),
-            len: 0,
-            dtypes: HashMap::new(),
-        }
+        Self::default()
     }
-    /// Add a new series to a DataFrame
+    /// Add a series to the DataFrame
     ///
-    /// The series to be added should have the same length as the DataFrame
-    ///
-    /// Any type of a series can be added, but supported types are [`f32`], [`f64`],[`i32`],[`i64`]
-    /// [`i128`],[`String`] and [`str`] type Series. Other series will be added. And will be in memory
-    /// but will not be printed or seen or any calculations carried out on them but can be fetched and indexed
-    ///
+    /// # Arguments
+    /// * `other`: A Series to be added
+    /// * `preserve_names`: If `true`, the name of the series will be preserved
+    ///  if `false` the series will be referred in the DataFrame using numbers from 0..N
     /// # Errors
-    /// * `DifferentLength` : The series to be added has a different length with the corresponding dataframe
-    /// * `ColumnNameError`: The series contains two similar column types
-    /// >  Note: first if two columns conflict. We will append a number to it corresponding to the number of items
-    /// so `series` will become `series2` if there is already a series present if there is a conflicting name still
-    /// the above error is raised
-    /// # Example
-    /// ````
-    /// use crate::dami::prelude::DataFrame;
-    /// use dami::core::series::Series;
-    /// fn main(){
-    ///     // Create a new DataFrame
-    ///     let mut df = DataFrame::new();
-    ///     let s1=df.add_series(Series::from([1,2,3,4,6,9,8,4,2]),true);
-    ///     assert_eq!(s1.is_ok(),true);
-    ///     // Try adding a smaller series. This returns an error
-    ///     let s2=df.add_series(Series::from([1]),true);
-    ///     assert!(s2.is_err());
-    /// }
-    /// ````
-    pub fn add_series<T: Default + 'static + Clone>(
+    /// * `DifferentLength`: A series to be added contains different length than the initial series
+    /// * `ColumnNameErrors`: If the series contains a name already in the DataFrame. to prevent overwriting the original series
+    /// > **Note**: Initially if a name conflict occurs, we will reassign the series with a number and if the same number is still in the DataFrame
+    ///  then we panic
+    pub fn add_series<T>(
         &mut self,
         other: Series<T>,
         preserve_names: bool,
-    ) -> Result<(), DataFrameErrors> {
-        if !self.container.is_empty() && other.len() != self.len {
-            return Err(DataFrameErrors::DifferentLength(other.len(), self.len));
-        }
-        if self.container.is_empty() {
-            self.len = other.len();
-            self.index = other.get_index();
-        }
-        // Clone names which become the header
-        let mut new_name = other.get_name();
-
-        if self.container.contains_key(new_name.as_str()) || !preserve_names {
-            new_name = format!("{}", self.container.len());
-            // Check now there isn't naming conflicts if still, raise an error
-            if self.container.contains_key(new_name.as_str()) {
-                return Err(DataFrameErrors::ColumnNameErrors(new_name));
-            }
-        }
-        // DataType
-        let new_type = other.get_dtype();
-        self.order.push(new_name.clone());
-        self.container.insert(new_name.clone(), other);
-        self.dtypes.insert(new_name, new_type);
-        Ok(())
+    ) -> Result<(), DataFrameErrors>
+    where
+        T: Clone + Default + 'static,
+    {
+        self.block.add_series(other, preserve_names)
     }
-    /// Create a new column with the given name
-    pub fn add_col<T: Default + 'static + Clone>(
-        &mut self,
-        name: &str,
-        col: Series<T>,
-    ) -> Result<(), DataFrameErrors> {
-        let mut series = col;
-        series.set_name(name);
-        self.add_series(series, true)
-    }
-    /// # Requires Feature
-    ///  > * `stats`
-    ///
-    /// Generate descriptive characteristics of an f64,f32 or i32 Series' in the DataFrame
-    ///
-    /// These includes those that summarize central tendency, dispersion and shape
-    ///
-    /// NAN values are by default going to be skipped
-    /// # For Numeric Data
-    /// The results index will include `count`,`mean`,`std`,`pstdev`,`min`,`max` as well as lower, 50 and upper
-    /// percentiles
-    ///
-    /// For more information. See the documentation on the function [describe] in SeriesFloat Trait
+    /// Apply a function either Row or column-wise and Returns a Scalar for each row or column
+    /// # Arguments
+    /// * `axis`: If set to true the function is applied Row wise if false the function is applied column wise.
+    /// * `func`: A function to apply to the DataFrame
     /// # Returns
-    ///  A DataFrame containing descriptive characteristics. If no float or i32 Series exists returns an empty DataFrame
+    /// * `Some(Series<T>)` if the type `T` Exists in the DataFrame
+    /// * `None` if otherwise
+    /// # Example
+    /// ```
+    /// use dami::prelude::*;
+    /// use ndarray::{Array2,Array1};
+    /// use std::ops::Add;
+    /// use num_traits::Zero;
+    /// fn sum_axis<T:Add<Output=T>+Clone+Zero>(arr:Array1<T>)->T{
+    ///     arr.sum()
+    /// }
+    /// let ones:Array2<f64> = Array2::ones((4,8)); // Create a 4 by 8 array
+    /// let df = DataFrame::from(ones);
     ///
-    /// [describe]: /dami/core/series/traits/floats/trait.SeriesFloat.html#tymethod.describe
-    #[cfg(feature = "stats")]
-    pub fn describe(&self) -> DataFrame {
-        let mut frame = DataFrame::new();
-        for i in &self.order {
-            let dtype = self.dtypes.get(i).unwrap();
-            match dtype {
-                DataTypes::F64 => {
-                    let series = self.container.get::<Series<f64>, _>(i).unwrap();
-                    frame.add_series(series.describe(), true).unwrap();
-                }
-                DataTypes::F32 => {
-                    let series = self.container.get::<Series<f32>, _>(i).unwrap();
-                    frame.add_series(series.describe(), true).unwrap();
-                }
-                DataTypes::I32 => {
-                    let series = self.container.get::<Series<i32>, _>(i).unwrap();
-                    frame.add_series(series.describe(), true).unwrap();
-                }
-                _ => continue,
-            }
-        }
-        frame
+    /// df.apply::<f64,_>(true,sum_axis).unwrap(); // This looks like [8,8,8,8]
+    /// df.apply::<f64,_>(false,sum_axis).unwrap(); // This looks like [4,4,4,4,4,4,4,4]
+    /// ```
+    pub fn apply<T, F>(&self, axis: bool, func: F) -> Option<Series<T>>
+    where
+        T: Clone + Default + 'static,
+        F: Clone + Fn(Array1<T>) -> T,
+    {
+        self.block.apply(func, axis)
     }
-    ///  Generate descriptive characteristics for String and str DataTypes in the DataFrame
+    ///  Apply a function elementwise and create a new DataFrame from the Result
     ///
-    /// The resulting DataFrame will contain a series with `count`, `top`, `freq` and `unique`
-    /// For more. See [describe]
+    /// # Notes
+    /// If the current DataFrame contains Heterogeneous Data, the elements not matching generic type `T`
+    /// will not be included in the new DataFrame.
     ///
-    /// [describe]: /dami/core/series/traits/strings/trait.Strings.html#tymethod.describe
-    pub fn describe_str(&self) -> DataFrame {
-        let mut frame = DataFrame::new();
-        for i in self.container.keys() {
-            let dtype = self.dtypes.get(i).unwrap();
-            match dtype {
-                DataTypes::STRING => {
-                    let series = self.container.get::<Series<String>, _>(i).unwrap();
-                    frame.add_series(series.describe(), true).unwrap();
-                }
-                DataTypes::STR => {
-                    let series = self.container.get::<Series<&'static str>, _>(i).unwrap();
-                    frame.add_series(series.describe(), true).unwrap();
-                }
-                _ => continue,
-            }
-        }
-        frame
+    /// # Example
+    /// ```
+    /// use dami::prelude::*;
+    /// use ndarray::Array2;
+    /// let ones:Array2<f64> = Array2::ones((4,4)); // Create a 4*4 matrix
+    /// let df = DataFrame::from(ones);
+    /// df.apply_map::<f64,_>(f64::sqrt); // Square root all numbers which is still 1 though :)
+    /// ```
+    pub fn apply_map<T, F>(&self, func: F) -> DataFrame
+    where
+        T: Clone + Default + 'static,
+        F: Clone + Fn(T) -> T,
+    {
+        self.block.apply_map::<T, _>(func)
     }
-    /// Get the Data types for the series
-    pub fn dtypes(&self) -> HashMap<String, DataTypes> {
-        self.dtypes.clone()
+    /// Creates a new column from another column and clones the DataFrame
+    ///
+    /// Existing columns that are reassigned will be preserved.
+    /// # Errors
+    /// [`KeyError`] The key does not exist
+    /// # Example
+    /// ```
+    /// use dami::prelude::DataFrame;
+    /// use std::collections::HashMap;
+    /// use std::convert::TryFrom;
+    ///
+    /// fn convert_to_f(value:f64)->f64{
+    ///     value*9.0/5.0+32.0
+    /// }
+    /// let mut values:HashMap<&str,Vec<f64>> = [("temp_c",vec![17.0,25.0])].iter().cloned().collect();
+    /// let df = DataFrame::try_from(values).unwrap();
+    /// /// State the name of the column already in the DataFrame and the new column name.
+    /// let temp_f=df.assign("temp_c","temp_f",convert_to_f);
+    /// println!("{:?}",temp_f.unwrap());
+    /// ```
+    /// The above example prints
+    /// ```text
+    ///     temp_c  temp_f
+    /// 0   17.0    62.6
+    /// 1   25.0    77.0
+    /// ```
+    pub fn assign<T, F>(&self, key: &str, name: &str, func: F) -> Result<DataFrame, DataFrameErrors>
+    where
+        T: Clone + Default + 'static,
+        F: Fn(T) -> T,
+    {
+        match self.block.assign(key, name, func) {
+            Ok(block) => Ok(DataFrame::from(block)),
+            Err(err) => Err(err),
+        }
+    }
+    /// Like [assign](#method.assign), but performs the assignment in the DataFrame
+    #[allow(clippy::missing_errors_doc)]
+    pub fn assign_inplace<T, F>(
+        &mut self,
+        key: &str,
+        name: &str,
+        func: F,
+    ) -> Result<(), DataFrameErrors>
+    where
+        T: Clone + Default + 'static,
+        F: Fn(T) -> T,
+    {
+        match self.block.assign_inplace(key, name, func) {
+            Ok(()) => Ok(()),
+            Err(err) => Err(err),
+        }
+    }
+    /// Combine this DataFrame with another DataFrame using a func to element-wise combine columns.
+    ///
+    /// # Arguments
+    /// * `other`: A reference to a DataFrame
+    /// *`func`: A function that takes two arguments and returns one back
+    ///
+    /// # Warning
+    /// Columns no matching generic type T are by default skipped
+    /// and their series will not be included in the resulting DataFrame.
+    /// # Example
+    /// ```
+    /// use dami::prelude::*;
+    ///
+    /// use std::cmp::max;
+    ///
+    /// use ndarray::arr2;
+    ///
+    /// let a = arr2(&[[1, 2, 32],
+    ///               [4, 5, 6]]);
+    /// let b = arr2(&[[1, 6, 3],
+    ///               [42, 5, 6]]);
+    /// let df1 = DataFrame::from(a);
+    ///
+    /// let df2 = DataFrame::from(b);
+    /// // Combine the two taking the max values first
+    /// let df3=df2.combine::<i32,_>(&df1,max);
+    /// println!("{:?}",df3);
+    /// ```
+    /// Prints
+    /// ```text
+    ///     0   1   2
+    /// 0   1   6   32
+    /// 1   42  5   6
+    /// ```
+    pub fn combine<T, F>(&self, other: &DataFrame, func: F) -> DataFrame
+    where
+        T: Clone + Default + 'static,
+        F: Clone + Fn(T, T) -> T,
+    {
+        self.block.clone().combine(other, func)
+    }
+    /// Similar to `apply_map`, but uses parallel iterators to speed up the operation
+    ///
+    /// # Notes
+    /// * If the current DataFrame contains Heterogeneous Data, the elements not matching generic type `T`
+    /// will not be included in the new DataFrame.
+    /// * The function needs to implement `Send`+`Sync` in order to be shared by multiple threads
+    /// * The two traits are implemented by default when the compiler sees fit.
+    ///  most functions implement send and sync except those that use raw pointers, Cell, and Rc
+    /// see [here]( https://doc.rust-lang.org/nomicon/send-and-sync.html)
+    ///
+    /// # Example
+    /// ```
+    /// use dami::prelude::*;
+    /// use ndarray::Array2;
+    /// let ones:Array2<f64> = Array2::ones((4,4)); // Create a 4*4 matrix
+    /// let df = DataFrame::from(ones);
+    /// df.par_apply_map::<f64,_>(f64::sqrt); // Square root all numbers which is still 1 though :)
+    /// ```
+    pub fn par_apply_map<T, F>(&self, func: F) -> DataFrame
+    where
+        T: Clone + Default + 'static + Send + Sync,
+        F: Send + Sync + Clone + Fn(T) -> T,
+    {
+        self.block.par_apply_map::<T, _>(func)
+    }
+    /// Get the series at column `col`
+    ///
+    /// This can be used to fetch individual Series from the DataFrame
+    /// # Returns
+    /// * Some(series): If the Series\<T> exists in the DataFrame
+    /// * None: If the series doesn't exist
+    ///  # Panics
+    /// * If the name doesn't exist in the DataFrame
+    pub fn get<T>(&self, col: &str) -> Option<Series<T>>
+    where
+        T: Clone + Default + 'static,
+    {
+        self.block.get(col)
+    }
+    /// Prints the first `n` elements of the series
+    ///
+    /// # Example
+    /// ```ignore
+    /// use ndarray::Array2;
+    /// use ndarray_rand::RandomExt;
+    /// use ndarray_rand::rand_distr::Uniform;
+    /// use ndarray_rand::rand::SeedableRng;
+    /// use dami::prelude::*;
+    /// use rand_isaac::isaac64::Isaac64Rng;
+    ///
+    /// let seed = 42;
+    /// let mut rng = Isaac64Rng::seed_from_u64(seed);
+    /// let df = DataFrame::from(Array2::random_using((50,4),Uniform::new(0., 10.),&mut rng)); // Create a DataFrame from a 2 dimensional array;
+    /// df.head(3);
+    /// ```
+    /// The above code prints
+    /// ```text
+    ///      0      1      2      3
+    ///  0   6.238  6.238  6.238  6.238
+    ///  1   1.670  1.670  1.670  1.670
+    ///  2   3.508  3.508  3.508  3.508
+    /// ```
+    /// # Panics
+    /// if `n` is greater than the values in the DataFrame
+    pub fn head(&self, n: usize) {
+        self.block.head(n);
+    }
+    /// Similar to [`head`](#method.head) but prints to an ecvxr environment
+    pub fn head_ecvxr(&self, n: usize) {
+        self.block.head_evcxr(n)
+    }
+    /// Replace values where condition is True
+    ///
+    /// # Arguments
+    /// * `value`: The new value to add where the `cond` becomes true
+    /// * `cond`: A function or closure that takes a value `T` and returns `true` or `false`
+    pub fn mask<T,F>(&mut self,value: T, cond: F)
+    where
+        F: Clone + Fn(T) -> bool,
+        T: Clone + Default + 'static
+    {
+        self.block.mask(value,cond)
+    }
+    /// Prints the last `n` elements of the DataFrame
+    /// # Panics
+    /// If `n` is larger than items in the DataFrame
+    /// # Example
+    /// ```ignore
+    /// use ndarray::Array2;
+    /// use ndarray_rand::RandomExt;
+    /// use ndarray_rand::rand_distr::Uniform;
+    /// use ndarray_rand::rand::SeedableRng;
+    /// use dami::prelude::*;
+    /// use rand_isaac::isaac64::Isaac64Rng;
+    ///
+    /// let seed = 42;
+    /// let mut rng = Isaac64Rng::seed_from_u64(seed);
+    /// let df = DataFrame::from(Array2::random_using((50,4),Uniform::new(0., 10.),&mut rng)); // Create a DataFrame from a 2 dimensional array;
+    /// df.tail(4);
+    /// ```
+    /// The above code prints
+    /// ```text
+    ///   0      1      2      3
+    ///  46  4.852  4.852  4.852  4.852
+    ///  47  0.084  0.084  0.084  0.084
+    ///  48  2.659  2.659  2.659  2.659
+    ///  49  5.218  5.218  5.218  5.218
+    /// ```
+    pub fn tail(&self, n: usize) {
+        self.block.tail(n);
+    }
+    /// Similar to [`tail`](#method.tail) but prints formatted output in a evcxr environment.
+    pub fn tail_evcxr(&self, n: usize) {
+        self.block.tail_evcxr(n)
+    }
+    /// Converts a DataFrame into a 2 dimensional ndarray
+    ///
+    /// # Returns
+    /// * `Array2<T>` if the elements of type `T` exist in the DataFrame
+    /// * `None` if there no elements of type `T`
+    /// # Example
+    /// ```
+    /// use ndarray::Array2;
+    /// use dami::prelude::*;
+    ///
+    /// let ones:Array2<f64>=Array2::ones((4,4));// Create a 4 by 4 matrix of ones
+    /// let df = DataFrame::from(ones);
+    /// println!("{}",df.to_ndarray::<f64>().unwrap()); // Floats are printed as ints in display mode
+    /// ```
+    /// The above code prints
+    /// ```text
+    /// [[1, 1, 1, 1],
+    ///  [1, 1, 1, 1],
+    ///  [1, 1, 1, 1],
+    ///  [1, 1, 1, 1]]
+    /// ```
+    pub fn to_ndarray<T>(&self) -> Option<Array2<T>>
+    where
+        T: Clone + Default + 'static,
+    {
+        self.block.to_ndarray()
     }
 }
-
 #[allow(clippy::fallible_impl_from)]
 impl<T: Default + 'static + Clone> From<Array2<T>> for DataFrame {
     fn from(array: Array2<T>) -> Self {
@@ -410,7 +406,11 @@ impl<T: Default + 'static + Clone> TryFrom<HashMap<&str, Vec<T>>> for DataFrame 
         Ok(frame)
     }
 }
-
+impl From<BlockManager> for DataFrame {
+    fn from(mgr: BlockManager) -> Self {
+        DataFrame { block: mgr }
+    }
+}
 impl<T: Default + 'static + Clone> TryFrom<HashMap<&str, Array1<T>>> for DataFrame {
     type Error = DataFrameErrors;
 
