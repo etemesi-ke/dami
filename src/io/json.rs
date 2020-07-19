@@ -5,11 +5,13 @@ use crate::io::dtypes::{
     json_is_bool, json_is_float, json_is_int, json_value_to_bool, json_value_to_float,
     json_value_to_int, json_value_to_string,
 };
-use crate::io::utils::read;
+use crate::io::utils::{is_compressed, is_url, read};
 use serde_json::Value;
 use std::cmp::min;
 use std::collections::HashMap;
 use std::fmt::Debug;
+use std::fs::{read_to_string, File};
+use std::io::{BufRead, BufReader};
 use std::path::Path;
 
 /// The JSON reader
@@ -37,19 +39,21 @@ impl<'a> JsonReader<'a> {
     ///
     /// The path is a string pointing to a directory
     pub fn read<P: AsRef<Path> + Debug + Clone>(&mut self, path: P, lines: bool) {
-        let line_terminator = self.settings.get("line_terminator").unwrap_or(&"\n");
-        let data = read(path);
+        if is_url(path.as_ref().to_str().unwrap()) && is_compressed(path.as_ref().to_str().unwrap())
+        {
+            self.parse_string_json(&read(path), lines);
+        } else {
+            // Local non-zipped file
+            self.parse_local_file(path.as_ref().to_str().unwrap(), lines);
+        }
+    }
+    fn parse_local_file(&mut self, path: &str, lines: bool) {
         if lines {
-            let array = data
-                .split(line_terminator)
-                .collect::<Vec<&str>>()
-                .into_iter()
-                .map(std::string::ToString::to_string)
-                .collect::<Vec<String>>();
-
-            for line in array {
+            let fd = File::open(path).unwrap();
+            let buf = BufReader::new(fd);
+            for line in buf.lines() {
                 let mut i_guess: Vec<Value> = Vec::new();
-                let val: Result<Value, _> = serde_json::from_str(&line);
+                let val: Result<Value, _> = serde_json::from_str(&line.unwrap());
                 match val {
                     Ok(value) => {
                         let object = value.as_object().unwrap().to_owned();
@@ -69,7 +73,37 @@ impl<'a> JsonReader<'a> {
                 };
             }
         } else {
-            let val: Result<Value, _> = serde_json::from_str(&data);
+            let dt = read_to_string(path).unwrap();
+            self.parse_string_json(&dt, false)
+        }
+    }
+    fn parse_string_json(&mut self, data: &str, lines: bool) {
+        if lines {
+            let array = data.to_string();
+
+            for line in array.lines() {
+                let mut i_guess: Vec<Value> = Vec::new();
+                let val: Result<Value, _> = serde_json::from_str(line);
+                match val {
+                    Ok(value) => {
+                        let object = value.as_object().unwrap().to_owned();
+                        if self.headers.is_empty() {
+                            let headers = object.keys();
+                            for i in headers {
+                                self.headers.push(i.to_owned());
+                            }
+                        }
+                        let vals = object.values();
+                        for each in vals {
+                            i_guess.push(each.to_owned());
+                        }
+                        self.smart_push(i_guess);
+                    }
+                    Err(_) => continue,
+                };
+            }
+        } else {
+            let val: Result<Value, _> = serde_json::from_str(data);
             if let Ok(value) = val {
                 let object = value.as_object().unwrap().to_owned();
                 if self.data.is_empty() {

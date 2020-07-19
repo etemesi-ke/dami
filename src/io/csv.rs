@@ -1,27 +1,23 @@
 //! Read/write/investigate/ CSV files
+#![allow(dead_code)]
 
 use std::collections::HashMap;
 use std::fmt;
 use std::fmt::{Debug, Display, Formatter};
-use std::num::{ParseFloatError, ParseIntError};
 use std::path::Path;
-
-use prettytable::{format, Cell, Row, Table};
 
 use crate::core::series::Series;
 use crate::io::dtypes::{is_bool, is_float, is_int, str_to_bool, str_to_float, str_to_int};
-use crate::io::utils::read;
+use crate::io::utils::{is_compressed, is_url, read};
 use crate::prelude::DataFrame;
 use std::cmp::min;
-use std::f64::NAN;
-use std::io::Write;
+use std::fs::File;
+use std::io::{BufRead, BufReader, Write};
 
 /// The Error type for CSV
 pub enum CSVError {
     /// The CSV cannot be parsed
     ParseError,
-    /// The CSV file could not be converted to a certain type
-    ConvertError(String),
 }
 
 impl Debug for CSVError {
@@ -29,7 +25,6 @@ impl Debug for CSVError {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Self::ParseError => write!(f, "Could not parse csv"),
-            Self::ConvertError(ref pos) => write!(f, "Could not convert csv to type\n{}", pos),
         }
     }
 }
@@ -74,19 +69,6 @@ impl<'a> Reader<'a> {
     pub fn new() -> Reader<'a> {
         Self::default()
     }
-    /// Create a new Reader with a customised builder
-    ///
-    /// This will override the default settings of the builder
-    pub fn with_builder(builder: Builder<'a>) -> Reader {
-        let has_headers = builder.has_headers;
-        Reader {
-            data: Vec::new(),
-            builder,
-            headers: Vec::new(),
-            has_headers,
-            settings: HashMap::new(),
-        }
-    }
     /// Parse a String as a csv
     ///
     /// If the underlying builder indicates that the CSV has headers,
@@ -106,57 +88,68 @@ impl<'a> Reader<'a> {
     ///
     /// # Returns
     /// [Reader<'a>](struct.Reader.html)
-    pub fn parse_string_csv(&mut self, data: &str) -> Self {
-        // Split the string to lines
-        let mut lines: Vec<String> = data
-            .split(self.builder.line_terminator)
-            .collect::<Vec<&str>>()
-            .into_iter()
-            .map(std::string::ToString::to_string)
-            .collect::<Vec<String>>();
-        // We can already guess its capacity
-        self.data = Vec::with_capacity(lines.len());
-        if self.settings.contains_key("headers") && !self.has_headers {
-            let headers = self.settings.get("headers").unwrap();
-            // Infer column names
-            // TODO:Change how this orientation is seen
-            if headers == &"0" {
-                lines.clone().into_iter().for_each(|f| {
-                    self.smart_push(
-                        smart_split(&f, self.builder.delimiter, self.builder.quote_char),
-                        false,
-                    )
-                    .unwrap()
-                });
-                if has_header(self.data.as_slice()) {
-                    // DEPLOY THE TROOPS => |:|:|:|:|
-                    self.has_headers = true;
-                } else {
-                    let values = self.data.len();
-                    let prefix = self.settings.get("prefix").unwrap_or(&"");
-                    // :\
-                    for p in 0..values {
-                        self.headers.push(format!("{}{}", prefix, p))
-                    }
-                    self.has_headers = true
-                }
-            }
-        }
+    fn parse_string_csv(&mut self, data: &str) -> DataFrame {
         if self.builder.has_headers && self.headers.is_empty() {
-            let headers = lines.remove(0);
+            let headers = data.lines().next().unwrap();
             self.smart_push(
-                smart_split(
-                    headers.as_str(),
-                    self.builder.delimiter,
-                    self.builder.quote_char,
-                ),
+                smart_split(headers, self.builder.delimiter, self.builder.quote_char),
                 true,
             )
             .unwrap();
         }
-        for line in lines {
-            if line.starts_with(self.builder.ignore){
-                continue
+        for line in data.lines() {
+            if line.starts_with(self.builder.ignore) {
+                continue;
+            }
+            // Smart split is actually noice :)
+            let split_lines = smart_split(line, self.builder.delimiter, self.builder.quote_char);
+            self.smart_push(split_lines, false).unwrap()
+        }
+        self.to_dataframe()
+    }
+    fn own_it(&self) -> Self {
+        self.to_owned()
+    }
+    ///Parse a csv file
+    ///
+    /// to parse the data and also calls [`update_kwargs`](#method.update_kwargs) to update keyword
+    /// arguments
+    pub fn parse_csv<P: AsRef<Path> + Debug + Clone>(
+        &mut self,
+        path: P,
+        kwargs: HashMap<&'a str, &'a str>,
+    ) -> DataFrame {
+        self.update_kwargs(kwargs);
+
+        if is_url(path.as_ref().to_str().unwrap()) || is_compressed(path.as_ref().to_str().unwrap())
+        {
+            let lines = read(path);
+            self.parse_string_csv(&lines)
+        } else {
+            // For local files. We don't need to read the whole file to memory we can parse it line by line
+            self.parse_local_file(path.as_ref().to_str().unwrap())
+        }
+    }
+    fn parse_local_file(&mut self, path: &str) -> DataFrame {
+        let fd = File::open(path).unwrap();
+        let buf = BufReader::new(fd);
+        for line in buf.lines() {
+            let line = line.unwrap();
+            if self.builder.has_headers && self.headers.is_empty() {
+                let headers = line;
+                self.smart_push(
+                    smart_split(
+                        headers.as_str(),
+                        self.builder.delimiter,
+                        self.builder.quote_char,
+                    ),
+                    true,
+                )
+                .unwrap();
+                continue;
+            }
+            if line.starts_with(self.builder.ignore) {
+                continue;
             }
             // Smart split is actually noice :)
             let split_lines = smart_split(
@@ -166,24 +159,7 @@ impl<'a> Reader<'a> {
             );
             self.smart_push(split_lines, false).unwrap()
         }
-        self.own_it()
-    }
-    fn own_it(&self) -> Self {
-        self.to_owned()
-    }
-    ///Parse a csv file
-    ///
-    /// This fetches data and calls [`parse_string_csv`](#method.parse_string_csv)
-    /// to parse the data and also calls [`update_kwargs`](#method.update_kwargs) to update keyword
-    /// arguments
-    pub fn parse_csv<P: AsRef<Path> + Debug + Clone>(
-        &mut self,
-        path: P,
-        kwargs: HashMap<&'a str, &'a str>,
-    ) -> Reader<'a> {
-        let lines = read(path);
-        self.update_kwargs(kwargs);
-        self.parse_string_csv(&lines)
+        self.to_dataframe()
     }
     /// Update keyword arguments settings for the CSV reader
     ///
@@ -199,7 +175,7 @@ impl<'a> Reader<'a> {
     /// >> `ignore` : becomes the new ignore of the underlying builder
     ///
     /// >> `names` : Becomes the new headers of the CSV files
-    pub fn update_kwargs(&mut self, mut new_kwargs: HashMap<&'a str, &'a str>) {
+    fn update_kwargs(&mut self, mut new_kwargs: HashMap<&'a str, &'a str>) {
         if new_kwargs.contains_key("sep") || new_kwargs.contains_key("delimiter") {
             self.builder.set_delimiter(
                 new_kwargs
@@ -260,47 +236,6 @@ impl<'a> Reader<'a> {
             Ok(())
         }
     }
-    /// Convert a csv row to A [`Series`] type which allows higher level manipulation of data
-    /// # Arguments
-    /// > `idx`: ID of the row to convert
-    pub fn to_series_string(&self, idx: usize) -> Series<String> {
-        Series::from(self.data[idx].clone())
-    }
-
-    /// Convert a csv row to A [`Series`] type which allows higher level manipulation of data
-    /// # Arguments
-    /// > `idx`: ID of the row to convert
-    ///
-    /// If type can't be converted, it is replaced with NaN
-    pub fn to_series_float(&self, idx: usize) -> Series<f64> {
-        let mut new_vec = vec![];
-        self.data[idx].clone().into_iter().for_each(|f| {
-            let convert: f64 = f.parse::<f64>().unwrap_or(NAN);
-            new_vec.push(convert);
-        });
-        // What is a NAN value? What who is the fastest coder alive?
-        let mut new_series = Series::from(new_vec);
-        new_series.set_name(self.headers[idx].as_str());
-        new_series
-    }
-
-    /// Convert a csv row to A [`Series`] type which allows higher level manipulation of data
-    /// # Arguments
-    /// > `idx`: ID of the row to convert
-    ///
-    /// > `default`: Default value to use if the [`String`] cannot be converted to an int
-    pub fn to_series_int(&self, idx: usize, default: i32) -> Series<i32> {
-        let mut new_vec = vec![];
-        // Clone and parse
-        self.data[idx].clone().into_iter().for_each(|f| {
-            let convert: i32 = f.parse::<i32>().unwrap_or(default);
-            new_vec.push(convert);
-        });
-        // Watch Star Wars Clone wars
-        let mut new_series = Series::from(new_vec);
-        new_series.set_name(self.headers[idx].as_str());
-        new_series
-    }
     /// Convert a CSV to a DataFrame
     ///
     /// Currently. This uses the first record in the array to determine the type of the records for that column
@@ -322,17 +257,12 @@ impl<'a> Reader<'a> {
                 series.set_name(header.as_str());
                 df.add_series(series, true).unwrap();
             } else {
-                let mut series = Series::from(j.as_slice());
+                let mut series = Series::from(j.to_owned());
                 series.set_name(header.as_str());
                 df.add_series(series, true).unwrap();
             }
         }
         df
-    }
-
-    ///Pretty print data
-    pub fn pretty_print(&self) {
-        beautify(self.data.as_ref(), self.headers.as_ref())
     }
 }
 /// A  builder that exposes some common settings for the CSV reader
@@ -380,40 +310,16 @@ impl<'a> Builder<'a> {
         Self::default()
     }
     /// Get delimiter of the builder
-    /// # Example
-    /// ```
-    ///    use crate::dami::io::csv::Builder as Builder;
-    ///    fn main(){
-    ///         let builder = Builder::new();
-    ///         assert_eq!(builder.delimiter(),",") // Returns true
-    /// }
-    /// ```
     pub const fn delimiter(self) -> &'a str {
         self.delimiter
     }
     /// Set the delimiter of the Builder
-    /// # Example
-    /// ```
-    ///use crate::dami::io::csv::Builder as Builder;
-    ///
-    /// fn main(){
-    ///     let builder = Builder::new().set_delimiter(":").build();
-    ///     assert_eq!(builder.delimiter(),":") // Returns true
-    /// }
-    /// ```
     pub fn set_delimiter(&mut self, delimiter: &'a str) -> &mut Self {
         self.delimiter = delimiter;
         self
     }
     /// Whether the CSV has headers
     ///  # Example
-    /// ```
-    /// use crate::dami::io::csv::Builder as Builder;
-    ///
-    /// fn main(){
-    ///     let builder = Builder::new();
-    ///     assert_eq!(builder.headers(),true) // Returns true
-    /// }
     /// ```
     pub const fn headers(&self) -> bool {
         self.has_headers
@@ -424,29 +330,11 @@ impl<'a> Builder<'a> {
     ///
     ///# Arguments
     ///  `value`: [`bool`] set to true if the CSV has headers and false if otherwise
-    ///
-    /// # Example
-    /// ```
-    /// use crate::dami::io::csv::Builder as Builder;
-    ///
-    /// fn main(){
-    ///     let builder = Builder::new().set_headers(false).build();
-    ///     assert_eq!(builder.headers(),false) // Returns false
-    /// }
-    /// ```
     pub fn set_headers(&mut self, value: bool) -> &mut Self {
         self.has_headers = value;
         self
     }
     ///Get the line terminator of the builder
-    /// # Example
-    /// ```
-    /// use crate::dami::io::csv::Builder;
-    /// fn main(){
-    ///     let builder = Builder::new();
-    ///     assert_eq!(builder.line_terminator(),"\n") // Returns true
-    /// }
-    /// ```
     pub const fn line_terminator(&self) -> &'a str {
         self.line_terminator
     }
@@ -464,14 +352,6 @@ impl<'a> Builder<'a> {
     /// A line containing newline
     ///
     /// A line containing little records e.t.c
-    /// # Example
-    /// ```
-    ///  use crate::dami::io::csv::Builder;
-    ///  fn main(){
-    ///     let bd = Builder::new();
-    ///     assert_eq!(bd.flexible(),true); // Returns true
-    /// }
-    /// ```
     pub const fn flexible(&self) -> bool {
         self.flexible
     }
@@ -481,15 +361,6 @@ impl<'a> Builder<'a> {
     /// Otherwise it will panic if it encounters a wrongly formatted record
     ///
     /// If set to true, the CSV parser will ignore any wrongly formatted records
-    ///
-    /// # Example
-    /// ```
-    /// use crate::dami::io::csv::Builder;
-    /// fn main(){
-    ///     let bd = Builder::new().set_flexible(false).build(); // Do not do this
-    ///     assert_eq!(bd.flexible(),false) // May the universe be with you
-    /// }
-    /// ```
     pub fn set_flexible(&mut self, flexibility: bool) -> &mut Self {
         self.flexible = flexibility;
         self
@@ -535,142 +406,37 @@ pub fn series_to_csv<T: Clone + Display + Default + 'static, P: Write>(
     });
     filepath_or_buffer.flush().unwrap();
 }
-/// Beautify csv output
-/// using [prettytable-rs](https://docs.rs/prettytable-rs/0.8.0/prettytable/)
-#[allow(clippy::needless_range_loop)]
-fn beautify(data: &[Vec<String>], headers: &[String]) {
-    //Create a new table
-    let mut table = Table::new();
-    // If the first option is a title voila
-    let items_len = data[0].len();
-    let mut title = vec![];
-    for i in headers {
-        title.push(Cell::new(i).style_spec("bFG"))
-    }
-    table.set_titles(Row::new(title));
-    // Add rows
-    // counter should start from 1 since the first items were used as titles
-    for i in 1..items_len {
-        let mut final_ = Row::new(vec![]);
-        for j in 0..data.len() {
-            final_.add_cell(Cell::new(&data[j][i]))
-        }
-        table.add_row(final_);
-    }
-    table.set_format(*format::consts::FORMAT_BOX_CHARS);
-    table.print_tty(true);
-}
-
-///Creates a dictionary of types of data in each column. If any
-///column is of a single type (say, integers), *except* for the first
-///row, then the first row is presumed to be labels. If the type
-///can't be determined, it is assumed to be a string in which case
-///we assume it has no headers :\
-///Finally, a 'vote' is taken at the end for each column, adding or
-///subtracting from the likelihood of the first row being a header.
-///
-/// # THIS FUNCTION IS NOT GUARANTEED TO WORK
-#[allow(clippy::needless_range_loop, clippy::for_kv_map)]
-fn has_header(sample: &[Vec<String>]) -> bool {
-    // Assume first row is a header
-    let mut header = vec![];
-    for i in sample.to_owned() {
-        header.push(i.get(0).unwrap().to_string())
-    }
-    let columns = sample.get(0).unwrap().len();
-    let mut column_types: HashMap<usize, String> = HashMap::new();
-    for i in 0..columns {
-        column_types.insert(i, String::new());
-    }
-
-    let mut has_header = 0;
-    let mut counter = 0;
-    //arbitrary number of rows to check, to keep it sane
-    for checked in 0..sample.len() {
-        if counter > 20 {
-            break;
-        }
-
-        for col in column_types.clone().keys() {
-            counter += 1;
-            let temp = &sample[checked][*col].to_string();
-            let try_type: Result<String, ParseIntError> = {
-                let try_parse = temp.parse::<i32>();
-                match try_parse {
-                    Ok(num) => Ok(format!("{}", num)),
-                    Err(parse_int_error) => {
-                        let try_parse = temp.parse::<f64>();
-                        match try_parse {
-                            Ok(num) => Ok(format!("{}", num)),
-                            Err(_) => Err(parse_int_error),
-                        }
-                    }
-                }
-            };
-            match try_type {
-                Ok(type_) => {
-                    column_types.insert(*col, type_);
-                }
-                Err(_) => continue,
+fn smart_split(string: &str, split_at: &str, quote_char: &str) -> Vec<String> {
+    if string.contains(quote_char) {
+        // Otherwise use the special split if we have a quote character
+        let mut new_list = vec![];
+        let mut temp_holder = vec![];
+        let mut inside_quotes = false;
+        for each_letter in <&str>::clone(&string).chars() {
+            if each_letter.to_string() == quote_char && !inside_quotes {
+                inside_quotes = true;
+            } else if each_letter.to_string() == quote_char && inside_quotes {
+                inside_quotes = false
+            }
+            if !inside_quotes && each_letter.to_string() == split_at {
+                new_list.push(temp_holder.clone().into_iter().collect());
+                temp_holder.clear();
+                continue;
+            } else {
+                temp_holder.push(each_letter);
             }
         }
-    }
-    let try_type: Vec<Result<String, ParseIntError>> = {
-        let mut holder = vec![];
-        for temp in header.clone() {
-            let try_parse = temp.parse::<i32>();
-            let a = match try_parse {
-                Ok(num) => Ok(format!("{}", num)),
-                Err(parse_int_error) => {
-                    let try_parse: Result<f64, ParseFloatError> = temp.parse::<f64>();
-                    match try_parse {
-                        Ok(num) => Ok(format!("{}", num)),
-                        Err(_) => Err(parse_int_error),
-                    }
-                }
-            };
-            holder.push(a);
+        if !temp_holder.is_empty() {
+            new_list.push(temp_holder.into_iter().collect());
         }
-        holder
-    };
-
-    for (_, col_type) in &column_types {
-        if col_type.is_empty() {
-            has_header -= 1;
-        } else {
-            has_header += 1;
-        }
+        new_list
+    } else {
+        // If it doesn't contain the quote_char we can use default split
+        string
+            .split(split_at)
+            .map(std::string::ToString::to_string)
+            .collect()
     }
-    for i in try_type {
-        // If the first one is an int return false
-        if i.is_ok() {
-            return false;
-        }
-    }
-    has_header > 0
-}
-fn smart_split(string: &str, split_at: &str, quote_char: &str) -> Vec<String> {
-    let mut new_list = vec![];
-    let mut temp_holder = vec![];
-    let mut inside_quotes = false;
-    for each_letter in <&str>::clone(&string).chars() {
-        if each_letter.to_string() == quote_char && !inside_quotes {
-            inside_quotes = true;
-        } else if each_letter.to_string() == quote_char && inside_quotes {
-            inside_quotes = false
-        }
-        if !inside_quotes && each_letter.to_string() == split_at {
-            new_list.push(temp_holder.clone().into_iter().collect());
-            temp_holder.clear();
-            continue;
-        } else {
-            temp_holder.push(each_letter);
-        }
-    }
-    if !temp_holder.is_empty() {
-        new_list.push(temp_holder.into_iter().collect());
-    }
-    new_list
 }
 
 // Why this long :<|
