@@ -82,11 +82,10 @@ impl fmt::Debug for Errors {
 /// # Panics
 /// * If the names argument in the `options` settings contains duplicates
 /// # Notes
-/// While all efforts have been made to make this as fast as possible.
-/// It is still not as fast (mainly due to how it is implemented)
-/// (The whole CSV is read to memory and then it is split and then
-/// converted to appropriate types and used to create the DataFrame)
-/// We can do better :<\
+/// For local non-zipped files this function is much faster as it uses
+/// buffered io to parse the files as it is being read.
+///
+/// For remote files/zipped files. The files are first read to memory before being parsed
 pub fn read_csv<'a, P: AsRef<Path> + Debug + Clone>(
     path: P,
     options: Option<HashMap<&'a str, &'a str>>,
@@ -96,7 +95,7 @@ pub fn read_csv<'a, P: AsRef<Path> + Debug + Clone>(
     //Validate names
     validate_names(settings.get("names").unwrap()).unwrap();
     let mut new_reader = Reader::new();
-    new_reader.parse_csv(path, settings).to_dataframe()
+    new_reader.parse_csv(path, settings)
 }
 /// Read a JSON file to a DataFrame.
 ///

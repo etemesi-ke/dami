@@ -7,7 +7,6 @@ use crate::core::series::Series;
 use crate::enums::DataTypes;
 
 use calamine::{open_workbook_auto, CellErrorType, DataType, Reader};
-use regex::Regex;
 
 /// Read,read and read
 pub fn read_excel(
@@ -17,14 +16,14 @@ pub fn read_excel(
     dtypes: Option<Vec<DataTypes>>,
 ) -> DataFrame {
     // Let us select sheet names using regex, allowing us to match patterns and also names
-    let sheet_names = Regex::new(sheet).expect("could not convert sheet argument to regex");
+    let sheet_names: Vec<String> = sheet.split(",").collect();
     // Open
     let mut workbook = open_workbook_auto(path.clone())
         .expect(format!("Could not open workbook at {}", path.clone()).as_str());
     // Get sheet names
     let mut all_sheets = workbook.sheet_names().to_vec();
     // Retain sheet names matching the regular expression
-    all_sheets.retain(|f| sheet_names.is_match(f));
+    all_sheets.retain(|f| sheet_names.contains(f));
 
     let mut data_frame = DataFrame::new();
 

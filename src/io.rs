@@ -9,13 +9,13 @@
 
 #[cfg(feature = "clipboard")]
 pub mod clipboard;
-pub mod csv;
+mod csv;
 pub mod excel;
-pub mod fwf;
+mod fwf;
 #[cfg(feature = "hdf5")]
 pub mod hdf5;
-pub mod json;
+mod json;
 pub mod parser;
-pub mod utils;
+mod utils;
 
 mod dtypes;
