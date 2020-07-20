@@ -41,27 +41,33 @@ impl<T: Clone + Default + Num + Serialize + 'static> Series<T> {
     pub fn plot(&self, kind: &str) {
         let mut plot = Plot::new();
         match kind {
-            "bar" => plot.add_trace(self.plot_bar(&self.get_name())),
-            "line" => plot.add_trace(self.plot_line(Mode::Lines, &self.get_name())),
+            "bar" => plot.add_trace(self.plot_bar(&self.get_name(), self.get_index())),
+            "line" => {
+                plot.add_trace(self.plot_line(Mode::Lines, &self.get_name(), self.get_index()))
+            }
             "hist" => plot.add_trace(self.plot_histogram(&self.get_name())),
             "h_hist" => plot.add_trace(self.plot_horizontal_histogram(&self.get_name())),
-            "scatter" => plot.add_trace(self.plot_line(Mode::Markers, &self.get_name())),
+            "scatter" => {
+                plot.add_trace(self.plot_line(Mode::Markers, &self.get_name(), self.get_index()))
+            }
             _ => {
                 eprintln!("Method {} not known,defaulting to line plot", kind);
-                plot.add_trace(self.plot_line(Mode::Lines, self.get_name().as_str()));
+                plot.add_trace(self.plot_line(
+                    Mode::Lines,
+                    self.get_name().as_str(),
+                    self.get_index(),
+                ));
             }
         };
         plot.show();
     }
     #[doc(hidden)]
-    pub fn plot_bar(&self, name: &str) -> Box<Bar<String, T>> {
-        Bar::new(self.get_index(), self.to_vec()).name(name)
+    pub fn plot_bar(&self, name: &str, index: Vec<String>) -> Box<Bar<String, T>> {
+        Bar::new(index, self.to_vec()).name(name)
     }
     #[doc(hidden)]
-    pub fn plot_line(&self, mode: Mode, name: &str) -> Box<Scatter<String, T>> {
-        Scatter::new(self.get_index(), self.to_vec())
-            .name(name)
-            .mode(mode)
+    pub fn plot_line(&self, mode: Mode, name: &str, index: Vec<String>) -> Box<Scatter<String, T>> {
+        Scatter::new(index, self.to_vec()).name(name).mode(mode)
     }
     #[doc(hidden)]
     pub fn plot_histogram(&self, name: &str) -> Box<Histogram<T>> {
@@ -79,7 +85,7 @@ impl<T: Clone + Default + Num + Serialize + 'static> Series<T> {
     ///  Due to lack of an implementation by the default plotly library. This is a drop in replacement until
     /// (hopefully) we can get a better implementation by the maintainer (I didn't file an Issue if you wondering)
     ///
-    /// > This embeds a whole HTML file ( about 3 mb) to the notebook. And this grows linearly for every graph rendered.
+    /// > This embeds a whole HTML file ( about 10kb) to the notebook. And this grows linearly for every graph rendered.
     ///
     /// To make it work run
     /// ```bash
@@ -100,16 +106,26 @@ impl<T: Clone + Default + Num + Serialize + 'static> Series<T> {
             .as_secs();
         tempo_dir.push(format!("dami{}.html", time));
         match kind {
-            "bar" => plot.add_trace(self.plot_bar(self.get_name().as_str())),
-            "line" => plot.add_trace(self.plot_line(Mode::Lines, self.get_name().as_str())),
+            "bar" => plot.add_trace(self.plot_bar(self.get_name().as_str(), self.get_index())),
+            "line" => plot.add_trace(self.plot_line(
+                Mode::Lines,
+                self.get_name().as_str(),
+                self.get_index(),
+            )),
             "hist" => plot.add_trace(self.plot_histogram(self.get_name().as_str())),
             "h_hist" => plot.add_trace(self.plot_horizontal_histogram(self.get_name().as_str())),
-            "points" | "marks" => {
-                plot.add_trace(self.plot_line(Mode::Markers, self.get_name().as_str()))
-            }
+            "points" | "marks" => plot.add_trace(self.plot_line(
+                Mode::Markers,
+                self.get_name().as_str(),
+                self.get_index(),
+            )),
             _ => {
                 eprintln!("Method {} not known,defaulting to line plot", kind);
-                plot.add_trace(self.plot_line(Mode::Lines, self.get_name().as_str()));
+                plot.add_trace(self.plot_line(
+                    Mode::Lines,
+                    self.get_name().as_str(),
+                    self.get_index(),
+                ));
             }
         };
         plot.to_html(tempo_dir.clone());

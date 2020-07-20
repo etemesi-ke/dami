@@ -1,3 +1,4 @@
+#![cfg(feature = "stats")]
 use crate::core::block_manager::manager::Block;
 use crate::core::block_manager::BlockManager;
 use crate::core::dataframe::DataFrame;
@@ -5,6 +6,10 @@ use crate::core::series::Series;
 use crate::enums::DataTypes;
 use ndarray::Array2;
 use ndarray_stats::CorrelationExt;
+use plotly::Plot;
+use std::env::temp_dir;
+use std::fs;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 macro_rules! generate_methods {
     ($func:ident) => {
@@ -178,5 +183,217 @@ impl BlockManager {
         }
         let arr = Array2::from_shape_vec((amt, self.len), frames).unwrap();
         DataFrame::from(arr.cov(min_periods).unwrap())
+    }
+}
+
+impl BlockManager {
+    pub fn plot(&self, kind: &str) {
+        let mut me = Plot::new();
+        match kind {
+            "bar" => self.plot_bar(&mut me),
+            "line" => self.plot_lines(&mut me),
+            "hist" => self.plot_hist(&mut me),
+            "h_hist" => self.plot_h_hist(&mut me),
+            "scatter" => self.plot_marks(&mut me),
+            "box" => self.plot_box(&mut me),
+            _ => {
+                eprintln!("Method {} not known,defaulting to line plot", kind);
+                self.plot_lines(&mut me);
+            }
+        };
+        me.show();
+    }
+    pub fn plot_evcxr(&self, kind: &str) {
+        let mut me = Plot::new();
+        let mut tempo_dir = temp_dir();
+        let time = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        tempo_dir.push(format!("dami{}.html", time));
+        match kind {
+            "bar" => self.plot_bar(&mut me),
+            "line" => self.plot_lines(&mut me),
+            "hist" => self.plot_hist(&mut me),
+            "h_hist" => self.plot_h_hist(&mut me),
+            "scatter" => self.plot_marks(&mut me),
+            "box" => self.plot_box(&mut me),
+            _ => {
+                eprintln!("Method {} not known,defaulting to line plot", kind);
+                self.plot_lines(&mut me);
+            }
+        };
+        me.to_html(tempo_dir.clone());
+        let plot_data = fs::read_to_string(tempo_dir).unwrap();
+
+        println!(
+            "EVCXR_BEGIN_CONTENT text/html\n{}\nEVCXR_END_CONTENT",
+            format!(
+                "<div>{}</div>",
+                &plot_data.replace("plotly-html-element", &format!("dami_{}", time))
+            )
+        )
+    }
+    pub fn plot_bar(&self, plot: &mut Plot) {
+        for (dtype, block) in &self.blocks {
+            match dtype {
+                DataTypes::F64 => {
+                    block
+                        .downcast_ref::<Block<f64>>()
+                        .unwrap()
+                        .plot_bar(plot, self.index.clone());
+                }
+                DataTypes::F32 => {
+                    block
+                        .downcast_ref::<Block<f32>>()
+                        .unwrap()
+                        .plot_bar(plot, self.index.clone());
+                }
+                DataTypes::I64 => {
+                    block
+                        .downcast_ref::<Block<i64>>()
+                        .unwrap()
+                        .plot_bar(plot, self.index.clone());
+                }
+                DataTypes::I32 => {
+                    block
+                        .downcast_ref::<Block<i32>>()
+                        .unwrap()
+                        .plot_bar(plot, self.index.clone());
+                }
+                _ => continue,
+            }
+        }
+    }
+    pub fn plot_box(&self, plot: &mut Plot) {
+        for (dtype, block) in &self.blocks {
+            match dtype {
+                DataTypes::F64 => {
+                    block.downcast_ref::<Block<f64>>().unwrap().plot_box(plot);
+                }
+                DataTypes::F32 => {
+                    block.downcast_ref::<Block<f32>>().unwrap().plot_box(plot);
+                }
+                DataTypes::I64 => {
+                    block.downcast_ref::<Block<i64>>().unwrap().plot_box(plot);
+                }
+                DataTypes::I32 => {
+                    block.downcast_ref::<Block<i32>>().unwrap().plot_box(plot);
+                }
+                _ => continue,
+            }
+        }
+    }
+    pub fn plot_lines(&self, plot: &mut Plot) {
+        for (dtype, block) in &self.blocks {
+            match dtype {
+                DataTypes::F64 => {
+                    block
+                        .downcast_ref::<Block<f64>>()
+                        .unwrap()
+                        .plot_line(plot, self.index.clone());
+                }
+                DataTypes::F32 => {
+                    block
+                        .downcast_ref::<Block<f32>>()
+                        .unwrap()
+                        .plot_line(plot, self.index.clone());
+                }
+                DataTypes::I64 => {
+                    block
+                        .downcast_ref::<Block<i64>>()
+                        .unwrap()
+                        .plot_line(plot, self.index.clone());
+                }
+                DataTypes::I32 => {
+                    block
+                        .downcast_ref::<Block<i32>>()
+                        .unwrap()
+                        .plot_line(plot, self.index.clone());
+                }
+                _ => continue,
+            }
+        }
+    }
+    pub fn plot_hist(&self, plot: &mut Plot) {
+        for (dtype, block) in &self.blocks {
+            match dtype {
+                DataTypes::F64 => {
+                    block.downcast_ref::<Block<f64>>().unwrap().plot_hist(plot);
+                }
+                DataTypes::F32 => {
+                    block.downcast_ref::<Block<f32>>().unwrap().plot_hist(plot);
+                }
+                DataTypes::I64 => {
+                    block.downcast_ref::<Block<i64>>().unwrap().plot_hist(plot);
+                }
+                DataTypes::I32 => {
+                    block.downcast_ref::<Block<i32>>().unwrap().plot_hist(plot);
+                }
+                _ => continue,
+            }
+        }
+    }
+    pub fn plot_h_hist(&self, plot: &mut Plot) {
+        for (dtype, block) in &self.blocks {
+            match dtype {
+                DataTypes::F64 => {
+                    block
+                        .downcast_ref::<Block<f64>>()
+                        .unwrap()
+                        .plot_h_hist(plot);
+                }
+                DataTypes::F32 => {
+                    block
+                        .downcast_ref::<Block<f32>>()
+                        .unwrap()
+                        .plot_h_hist(plot);
+                }
+                DataTypes::I64 => {
+                    block
+                        .downcast_ref::<Block<i64>>()
+                        .unwrap()
+                        .plot_h_hist(plot);
+                }
+                DataTypes::I32 => {
+                    block
+                        .downcast_ref::<Block<i32>>()
+                        .unwrap()
+                        .plot_h_hist(plot);
+                }
+                _ => continue,
+            }
+        }
+    }
+    pub fn plot_marks(&self, plot: &mut Plot) {
+        for (dtype, block) in &self.blocks {
+            match dtype {
+                DataTypes::F64 => {
+                    block
+                        .downcast_ref::<Block<f64>>()
+                        .unwrap()
+                        .plot_dots(plot, self.index.clone());
+                }
+                DataTypes::F32 => {
+                    block
+                        .downcast_ref::<Block<f32>>()
+                        .unwrap()
+                        .plot_dots(plot, self.index.clone());
+                }
+                DataTypes::I64 => {
+                    block
+                        .downcast_ref::<Block<i64>>()
+                        .unwrap()
+                        .plot_dots(plot, self.index.clone());
+                }
+                DataTypes::I32 => {
+                    block
+                        .downcast_ref::<Block<i32>>()
+                        .unwrap()
+                        .plot_dots(plot, self.index.clone());
+                }
+                _ => continue,
+            }
+        }
     }
 }

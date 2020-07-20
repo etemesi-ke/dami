@@ -15,14 +15,14 @@ use crate::enums::DataTypes;
 use prettytable::{format::consts::FORMAT_CLEAN, Cell, Row, Table};
 use std::ops::{Index, IndexMut};
 
-mod impls;
-
 mod generic;
 mod ops;
+
+mod ints;
+#[cfg(feature = "stats")]
+pub use ints::Describe;
 #[cfg(feature = "stats")]
 mod stats;
-
-pub mod traits;
 
 pub mod errors;
 

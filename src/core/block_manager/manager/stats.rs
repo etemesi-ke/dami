@@ -1,8 +1,13 @@
+#![cfg(feature="stats")]
+#![allow(clippy::needless_pass_by_value)]
 use crate::core::block_manager::manager::Block;
 use crate::core::dataframe::DataFrame;
 use crate::core::series::Series;
-use num_traits::{Float, FromPrimitive};
+use num_traits::{Float, FromPrimitive, Num};
+use plotly::common::Mode;
+use plotly::{BoxPlot, Plot};
 use rayon::prelude::*;
+use serde::Serialize;
 use std::iter::Sum;
 
 impl<T: Float + Clone + FromPrimitive + 'static + Sync + Send + Default> Block<T> {
@@ -122,5 +127,43 @@ impl<T: Float + Clone + FromPrimitive + 'static + Sync + Send + Default> Block<T
             .map(|f| f.variance())
             .collect();
         Series::from(values)
+    }
+}
+
+impl<T> Block<T>
+where
+    T: Num + Serialize + Default + Clone + 'static,
+{
+    pub fn plot_bar(&self, plot: &mut Plot, index: Vec<String>) {
+        for (len, individual) in self.data.iter().enumerate() {
+            plot.add_trace(individual.plot_bar(&self.names[len], index.clone()));
+        }
+    }
+    pub fn plot_line(&self, plot: &mut Plot, index: Vec<String>) {
+        for (len, individual) in self.data.iter().enumerate() {
+            plot.add_trace(individual.plot_line(Mode::Lines, &self.names[len], index.clone()));
+        }
+    }
+    pub fn plot_hist(&self, plot: &mut Plot) {
+        for (len, individual) in self.data.iter().enumerate() {
+            plot.add_trace(individual.plot_histogram(&self.names[len]));
+        }
+    }
+
+    pub fn plot_h_hist(&self, plot: &mut Plot) {
+        for (len, individual) in self.data.iter().enumerate() {
+            plot.add_trace(individual.plot_horizontal_histogram(&self.names[len]));
+        }
+    }
+    pub fn plot_dots(&self, plot: &mut Plot, index: Vec<String>) {
+        for (len, individual) in self.data.iter().enumerate() {
+            plot.add_trace(individual.plot_line(Mode::Markers, &self.names[len], index.clone()));
+        }
+    }
+    pub fn plot_box(&self, plot: &mut Plot) {
+        for (len, individual) in self.data.iter().enumerate() {
+            let box_plot = BoxPlot::new(individual.to_vec()).name(&self.names[len]);
+            plot.add_trace(box_plot)
+        }
     }
 }

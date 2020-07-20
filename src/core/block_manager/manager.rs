@@ -43,7 +43,7 @@ impl<T: Clone + 'static + Default> Block<T> {
     pub fn apply<F: Clone + Fn(Array1<T>) -> T>(&self, func: F, axis: bool) -> Series<T> {
         // Row wise
         if axis {
-            let mut results_vec = Vec::new();
+            let mut results_vec = Vec::with_capacity(self.data[0].len());
             for i in 0..self.data[0].len() {
                 // Hold values of an axis temporarily.
                 let mut axis = vec![];
@@ -57,7 +57,7 @@ impl<T: Clone + 'static + Default> Block<T> {
         }
         // Column wise
         else {
-            let mut results_vec = Vec::new();
+            let mut results_vec = Vec::with_capacity(self.data.len());
             for i in 0..self.data.len() {
                 results_vec.push(func.clone()(self.data[i].to_ndarray()));
             }
@@ -131,32 +131,65 @@ impl<T: Clone + 'static + Default> Block<T> {
             series.mask_inplace(value.clone(), func.clone())
         }
     }
+    pub fn get(&self, idx: usize) -> Series<T> {
+        self.data[idx].clone()
+    }
+    pub fn get_str_value_at(&self, idx: usize, idx2: &str) -> T {
+        self.data[idx][idx2].clone()
+    }
     /// Get a series at a particular name
     pub fn get_series_at_name(&self, name: &str) -> Series<T> {
         self.data[self.names.iter().position(|f| f == name).unwrap()].clone()
     }
     /// Convert all the values in the `Block` into an `Array2<T>`
     pub fn to_ndarray(&self) -> Array2<T> {
-        let mut temp_vec = Vec::new();
+        // Prevent reallocation by preallocating the vector
+        let mut temp_vec = Vec::with_capacity(self.data.len() * self.data[0].len());
         self.data
             .iter()
             .for_each(|f| temp_vec.extend_from_slice(&f.to_vec()));
         let array2 = Array2::from_shape_vec((self.data[0].len(), self.data.len()), temp_vec);
         array2.unwrap()
     }
+    #[allow(non_snake_case)]
+    pub fn T(&self) -> Array2<T> {
+        let mut holder = Vec::with_capacity(self.data.len() * self.data[0].len());
+        for elm in &self.data {
+            holder.extend_from_slice(elm.to_vec().as_slice())
+        }
+        let arr2 = Array2::from_shape_vec((self.data[0].len(), self.data.len()), holder).unwrap();
+        arr2.reversed_axes()
+    }
     // Transform a block to another block
-    pub fn transform<F, P>(&self, func: F) -> Block<P>
+    pub fn transform<F, P>(&self, func: F, axis: bool) -> Block<P>
     where
         T: Send + Sync,
         F: Clone + Fn(Array1<T>) -> Array1<P> + Sync + Send,
         P: Send + Sync + Clone + Default + 'static,
     {
-        Block::from(
-            self.data
-                .clone()
-                .into_par_iter()
-                .map(|f| Series::from(func.clone()(f.to_ndarray())))
-                .collect::<Vec<Series<P>>>(),
-        )
+        if axis {
+            let mut results_vec = Vec::with_capacity(self.data[0].len());
+            unsafe {
+                for i in 0..self.data[0].len() {
+                    // Hold values of an axis temporarily.
+                    let mut axis = vec![];
+                    for j in 0..self.data.len() {
+                        // I am pretty sure it exists so i can get it un -safely
+                        axis.push(self.data.get_unchecked(j).get(i).unwrap().clone());
+                    }
+                    let arr_axis = Array1::from(axis);
+                    results_vec.push(Series::from(func.clone()(arr_axis)));
+                }
+            }
+            Block::from(results_vec)
+        } else {
+            Block::from(
+                self.data
+                    .clone()
+                    .into_par_iter()
+                    .map(|f| Series::from(func.clone()(f.to_ndarray())))
+                    .collect::<Vec<Series<P>>>(),
+            )
+        }
     }
 }

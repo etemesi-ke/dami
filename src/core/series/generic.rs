@@ -155,7 +155,7 @@ impl<T: Clone + 'static + Default> Series<T> {
         T: Send + Sync,
         F: Sync,
     {
-        self.array.par_mapv_inplace(|f| func(f))
+        self.array.mapv_inplace(|f| func(f))
     }
     /// Convert a series to another Series type
     ///
@@ -554,6 +554,29 @@ impl<T: Clone + 'static + Default> Series<T> {
         }
         println!("{}", table.to_string());
     }
+    /// Transform the values of a Series into a new value.
+    /// # Arguments
+    /// > `func`: A function that produces a new value for each value its called on
+    /// # Example
+    /// ```
+    /// // Do not do this on production code
+    /// use dami::core::series::Series;
+    /// pub fn i32_to_f64(val:i32)->f64{
+    ///     f64::from(val)
+    /// }
+    /// let series = Series::from([1,2,3,4,5,6]);
+    /// let new_s=series.transform::<f64,_>(i32_to_f64);
+    /// assert_eq!(new_s,Series::from([1.,2.,3.,4.,5.,6.]))
+    /// ```
+    pub fn transform<M,F>(&self, func: F) -> Series<M>
+    where
+        F:Fn(T) -> M,
+        M: Default+ 'static + Clone
+    {
+        let mut series = Series::from(self.array.mapv(|f| func(f)));
+        series.set_name(&self.get_name());
+        series
+    }
     /// Return the underlying ndarray of the Series;
     pub fn to_ndarray(&self) -> Array1<T> {
         self.array.clone()
@@ -584,7 +607,7 @@ fn validate_names(me: Vec<String>, other: Vec<String>) -> Result<(), Error> {
 }
 
 pub fn create_index(len: usize, prefix: &str, suffix: &str) -> Vec<String> {
-    let mut index = vec![];
+    let mut index = Vec::with_capacity(len);
     (0..len).for_each(|f| index.push(format!("{}{}{}", prefix, f, suffix)));
     index
 }

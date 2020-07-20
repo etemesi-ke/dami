@@ -4,6 +4,7 @@ mod manager;
 
 mod stats;
 
+mod ops;
 use crate::core::block_manager::manager::Block;
 use crate::core::series::Series;
 use crate::enums::DataFrameErrors::KeyError;
@@ -15,6 +16,7 @@ use prettytable::format::consts::FORMAT_CLEAN;
 use prettytable::{Cell, Row, Table};
 use serde::export::Formatter;
 use std::any::Any;
+use std::collections::hash_map::RandomState;
 use std::collections::HashMap;
 use std::fmt;
 
@@ -34,14 +36,21 @@ pub struct BlockManager {
 impl fmt::Debug for BlockManager {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let table = self.real_formatter(true);
-
-        write!(f, "{}", table.to_string())
+        let mut tbl = table.to_string();
+        if self.len >= 50 {
+            tbl += &format!("\n[{} rows x {} columns]", self.len, self.names.len());
+        }
+        write!(f, "{}", tbl)
     }
 }
 impl fmt::Display for BlockManager {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let table = self.real_formatter(false);
-        write!(f, "{}", table.to_string())
+        let mut tbl = table.to_string();
+        if self.len >= 50 {
+            tbl += &format!("\n{}[rows x {} columns]", self.len, self.names.len());
+        }
+        write!(f, "{}", tbl)
     }
 }
 impl BlockManager {
@@ -105,6 +114,9 @@ impl BlockManager {
             }
         }
         DataFrame::from(block_mgr)
+    }
+    pub fn dtypes(&self) -> HashMap<String, DataTypes, RandomState> {
+        self.values.clone()
     }
     /// Apply a function using parallel iterators
     /// This method should be faster than [apply](#method.apply) on large DataSets.
@@ -186,6 +198,15 @@ impl BlockManager {
             }
             None => Err(KeyError(format!("key {} does not exist", key))),
         }
+    }
+    pub fn at<T: Clone + Default + 'static>(&self, loc: (&str, &str)) -> Option<T> {
+        if let Some(dtype) = self.values.get(loc.1) {
+            if let Some(block) = self.blocks.get(dtype).unwrap().downcast_ref::<Block<T>>() {
+                let pos = block.names.iter().position(|n| loc.0 == n).unwrap();
+                return Some(block.get_str_value_at(pos, loc.1));
+            }
+        }
+        None
     }
     pub fn combine<T, F>(self, other: &DataFrame, func: F) -> DataFrame
     where
@@ -301,7 +322,7 @@ impl BlockManager {
             self.format(0, self.len, true, &mut table);
         } else {
             self.format(0, 5, true, &mut table);
-            table.add_empty_row();
+            table.add_row(Row::new(vec![Cell::new("...."); self.values.len() + 1]));
             let last_five = self.len - 5;
             self.format(last_five, self.len, false, &mut table);
         }
@@ -379,7 +400,13 @@ impl BlockManager {
                     }
                     DataTypes::STRING => {
                         let block = dtype.downcast_ref::<Block<String>>().unwrap();
-                        row.push(Cell::new(block.get_value_at(string_counter, i).as_str()));
+                        let value_at = block.get_value_at(string_counter, i);
+                        if value_at.len() < 30 {
+                            row.push(Cell::new(value_at.as_str()));
+                        } else {
+                            row.push(Cell::new(&(value_at[0..30].to_string() + "...")));
+                        }
+
                         string_counter += 1;
                     }
                     DataTypes::STR => {
@@ -426,7 +453,7 @@ impl BlockManager {
     pub fn mask<T, F>(&mut self, value: T, cond: F)
     where
         T: Default + Clone + 'static,
-        F: Clone+Fn(T) -> bool,
+        F: Clone + Fn(T) -> bool,
     {
         for blocks in &mut self.blocks {
             if let Some(block) = blocks.1.downcast_mut::<Block<T>>() {
@@ -462,7 +489,7 @@ impl BlockManager {
         self.format(start, self.len, true, &mut table);
         println!("{}", table.to_string());
     }
-    pub fn transform<T, P, F>(&self, func: F) -> Option<DataFrame>
+    pub fn transform<T, P, F>(&self, func: F, axis: bool) -> Option<DataFrame>
     where
         T: Default + 'static + Clone + Send + Sync,
         P: Default + 'static + Clone + Send + Sync,
@@ -471,7 +498,7 @@ impl BlockManager {
         for blocks in self.blocks.values() {
             if let Some(block) = blocks.downcast_ref::<Block<T>>() {
                 let mut new_block = BlockManager::default();
-                new_block.extend_from_block(block.transform(func));
+                new_block.extend_from_block(block.transform(func, axis));
                 return Some(DataFrame::from(new_block));
             };
         }

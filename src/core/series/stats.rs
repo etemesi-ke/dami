@@ -19,7 +19,10 @@ use num_traits::{Float, FromPrimitive, Zero};
 use std::iter::Sum;
 use std::ops::{Div, Mul};
 
-impl<T: Clone + Float + Default> Series<T> {
+impl<T> Series<T>
+where
+    T: Clone + Float + Default,
+{
     /// # Requires Feature
     ///  > * `stats`
     /// # Implemented for

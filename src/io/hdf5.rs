@@ -1,10 +1,11 @@
 //! Top level manipulations for HDF5 files in dami
 //!
 //! This module exports functions used in handling of hdf5  files
+use crate::core::dataframe::DataFrame;
 use crate::core::series::Series;
 use hdf5::{File, H5Type};
 
-use ndarray::Array1;
+use ndarray::{Array1, Array2};
 
 /// Read a HDF5 dataSet to a dami [`Series`]
 /// # Arguments
@@ -29,4 +30,13 @@ pub fn read_dataset_to_series<T: Clone + H5Type + Default>(file: &str, dataset: 
         .expect("Dataset could not be loaded \n");
     let array: Array1<T> = dataset.read_1d().unwrap();
     return Series::from(array);
+}
+/// Read hdf5 to a DataFrame
+pub fn read_hdf5<T: Clone + H5Type + Default>(file: &str, dataset: &str) -> DataFrame {
+    let file = File::open(file).unwrap();
+    let dataset = file.dataset(dataset).expect("Dataset could not be loaded");
+    let arr: Array2<T> = dataset
+        .read_2d()
+        .expect("Could not read DataSet to 2-D array");
+    DataFrame::from(arr)
 }

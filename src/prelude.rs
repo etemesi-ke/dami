@@ -3,14 +3,9 @@
 pub use crate::core::series::Series;
 
 pub use crate::core::dataframe::DataFrame;
-
-pub use crate::core::series::traits::{
-    bigint::BigIntSeries,
-    floats::SeriesFloat,
-    ints::SeriesInt,
-    strings::{Str, Strings},
-};
-pub use crate::io::parser::{read_csv, read_fwf};
+#[cfg(feature = "stats")]
+pub use crate::core::series::Describe;
+pub use crate::io::parser::{read_csv, read_fwf, read_json};
 pub use num_traits::float::Float;
 
 #[cfg(feature = "clipboard")]
