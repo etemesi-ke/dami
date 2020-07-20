@@ -188,7 +188,7 @@ where
    /// use crate::dami::core::series::Series;
    /// fn main(){
    ///     let series = Series::from([0,1,3,4,2,2]);
-   ///     assert_eq!(series.cum_min(),Series::from([0,1,3,4,4,4]));
+   ///     assert_eq!(series.cum_max(),Series::from([0,1,3,4,4,4]));
    /// }
    /// ```
     pub fn cum_max(&self) -> Series<T>
