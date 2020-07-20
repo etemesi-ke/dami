@@ -9,8 +9,8 @@
  <tr>
    <td>Build Status</td>
   <td>
-    <a href="https://travis-ci.org/etemesi-ke/dami">
-    <img src="https://travis-ci.org/etemesi-ke/dami.svg?branch=master" alt="travis build status" />
+    <a href="https://travis-ci.com/etemesi-ke/dami">
+    <img src="https://travis-ci.com/etemesi-ke/dami.svg?branch=master" />
     </a>
   </td>
 <tr>
