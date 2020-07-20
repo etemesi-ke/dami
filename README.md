@@ -1,4 +1,27 @@
 # dami 
+<table>
+ <tr>
+  <td>Lines of code</td>
+  <td>
+   <img src="https://tokei.rs/b1/github/etemesi-ke/dami/"/>
+  </td>
+  </tr>
+ <tr>
+   <td>Build Status</td>
+  <td>
+    <a href="https://travis-ci.org/etemesi-ke/dami">
+    <img src="https://travis-ci.org/etemesi-ke/dami.svg?branch=master" alt="travis build status" />
+    </a>
+  </td>
+<tr>
+ <tr>
+  <td>Speed</td>
+  <td>
+  <img src="https://img.shields.io/badge/SUPER-FAST-BLUE.svg"/>
+  </td>
+ </tr>
+</table>
+ 
 ## Data Manipulations in Rust
 ## Supported features out of the box
 * Reading csv files(both local and remote
