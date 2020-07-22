@@ -33,7 +33,7 @@ like `kurtosis()` and `skewness()`
 * Support for `evcxr rust jupyter` runtimes with methods that contain `_excvr` 
 * Well documented code.
 * Speed and memory efficiency.
-* Parrallel iterators on DataFrame methods.
+* Parallel iterators on DataFrame methods.
 
  # Pluggable features
 * `feature="stats"`: **Enabled by default** higher order statistical methods like kurtosis, central moments
