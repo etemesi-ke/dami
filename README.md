@@ -31,7 +31,6 @@ like `kurtosis()` and `skewness()`
 * Reading compressed zipped,lzma and xz files
 * Plotting for `i32`, `i64`, `i128`,`f32` and `f64` Series types and DataFrames
 * Support for `evcxr rust jupyter` runtimes with methods that contain `_excvr` 
-* Well documented code.
 * Speed and memory efficiency.
 * Parallel iterators on DataFrame methods.
 
@@ -73,7 +72,7 @@ use ndarray::Array2;
 use ndarray_rand::{Uniform}
 fn main(){
    let df = DataFrame::from(Array2::random((50,4), Uniform::from(10.,100.));
-   df.apply::<f64,_>::(f64::sqrt); root all floats
+   df.apply::<f64,_>(f64::sqrt); root all floats
 }
 ```
 > As an added benefit only series types  containing `f64` floats 
